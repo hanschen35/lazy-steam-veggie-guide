@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>互動式懶人蒸蔬菜指南 (AI 增強版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Warm Natural Tones -->
+    <!-- Application Structure Plan: 採用頂部導覽列切換四大主題的儀表板式設計：1.「蔬菜探索家」讓使用者透過備料等級互動式篩選蔬菜；2.「完美蒸煮術」整合了廚具技巧並將蒸煮時間視覺化為互動圖表；3.「風味魔法師」將醬汁配方轉為卡片；4.「均衡餐盤學」用色彩互動方式介紹植化素。新增第5個主題「✨ AI 創意廚房」，整合Gemini API提供食譜生成與餐盤設計功能，將應用從靜態指南升級為互動式AI助理。 -->
+    <!-- Visualization & Content Choices: 
+        - 蔬菜清單 -> 目標: 組織與篩選 -> 方式: JS控制的互動式HTML卡片網格 -> 互動: 點擊按鈕依「備料等級」篩選 -> 理由: 比靜態列表更直觀 -> 技術: HTML/CSS + Vanilla JS。
+        - 蒸煮時間表 -> 目標: 比較與告知 -> 方式: Chart.js 水平長條圖 -> 互動: 滑鼠懸停顯示精確時間 -> 理由: 視覺化呈現時間長短 -> 技術: Chart.js。
+        - 醬汁食譜 -> 目標: 告知 -> 方式: 結構化的HTML/CSS卡片 -> 理由: 將食譜模組化，方便套用 -> 技術: HTML/CSS。
+        - ✨ AI 食譜生成 -> 目標: 創造與建議 -> 方式: Gemini API 文字生成 -> 互動: 使用者選擇蔬菜與醬汁風格，點擊按鈕觸發API調用 -> 理由: 提供超越靜態資訊的個人化創意食譜 -> 技術: Vanilla JS Fetch API。
+        - ✨ AI 餐盤設計 -> 目標: 創造與建議 -> 方式: Gemini API 文字生成 -> 互動: 使用者輸入主食，點擊按鈕觸發API調用 -> 理由: 提供客製化的均衡飲食方案 -> 技術: Vanilla JS Fetch API。
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #FDFCF8;
+            color: #4A4441;
+        }
+        .nav-link {
+            transition: all 0.3s ease;
+            border-bottom: 2px solid transparent;
+        }
+        .nav-link.active {
+            color: #A37E64;
+            border-bottom-color: #A37E64;
+        }
+        .nav-link:hover {
+            color: #C1A79A;
+        }
+        .btn-filter {
+            transition: all 0.3s ease;
+        }
+        .btn-filter.active {
+            background-color: #86A37E;
+            color: #FFFFFF;
+        }
+        .btn-filter:not(.active) {
+            background-color: #F0EBE5;
+            color: #6B6663;
+        }
+        .veg-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .veg-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 500px;
+            max-height: 70vh;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 600px;
+            }
+        }
+        .color-block {
+            transition: transform 0.2s ease-in-out;
+        }
+        .color-block:hover {
+            transform: scale(1.05);
+        }
+        .hidden {
+            display: none;
+        }
+        .btn-gemini {
+            background-color: #A37E64;
+            color: white;
+            transition: background-color 0.3s ease;
+        }
+        .btn-gemini:hover {
+            background-color: #866a55;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #A37E64;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <header class="py-6 mb-6">
+            <h1 class="text-4xl font-bold text-center text-[#A37E64]">毫不費力的飲食藝術</h1>
+            <p class="text-center text-lg mt-2 text-gray-600">您的互動式零備料蒸蔬菜全攻略 (AI 增強版)</p>
+            
+            <nav id="main-nav" class="mt-8 border-b border-gray-200">
+                <ul class="flex justify-center flex-wrap -mb-px">
+                    <li><a href="#" class="nav-link inline-block p-4 text-lg font-medium active" data-target="explore">🥬 蔬菜探索家</a></li>
+                    <li><a href="#" class="nav-link inline-block p-4 text-lg font-medium" data-target="techniques">🔬 完美蒸煮術</a></li>
+                    <li><a href="#" class="nav-link inline-block p-4 text-lg font-medium" data-target="flavors">🎨 風味魔法師</a></li>
+                    <li><a href="#" class="nav-link inline-block p-4 text-lg font-medium" data-target="balanced-plate">🍽️ 均衡餐盤學</a></li>
+                    <li><a href="#" class="nav-link inline-block p-4 text-lg font-medium" data-target="ai-kitchen">✨ AI 創意廚房</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <main>
+            <section id="explore" class="app-section">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold mb-2">蔬菜探索家</h2>
+                    <p class="text-gray-600">點擊下方按鈕，篩選出最適合您今日需求的蔬菜夥伴。</p>
+                </div>
+                <div id="filter-container" class="flex justify-center space-x-2 sm:space-x-4 mb-8">
+                    <button class="btn-filter py-2 px-4 rounded-full font-semibold text-sm sm:text-base active" data-filter="all">全部</button>
+                    <button class="btn-filter py-2 px-4 rounded-full font-semibold text-sm sm:text-base" data-filter="zero">零備料</button>
+                    <button class="btn-filter py-2 px-4 rounded-full font-semibold text-sm sm:text-base" data-filter="minimal">極簡備料</button>
+                    <button class="btn-filter py-2 px-4 rounded-full font-semibold text-sm sm:text-base" data-filter="pre-prepped">超市即食</button>
+                </div>
+                <div id="veg-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+            </section>
+
+            <section id="techniques" class="app-section hidden">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold mb-2">完美蒸煮術</h2>
+                    <p class="text-gray-600">從工具到時間，掌握蒸煮的科學，成就完美口感與色澤。</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm mb-12">
+                     <h3 class="text-2xl font-bold mb-4 text-center text-[#A37E64]">終極蔬菜蒸煮時間圖表</h3>
+                     <p class="text-center text-gray-500 mb-6">將滑鼠懸停在長條上查看精確時間與專家提示。</p>
+                     <div class="chart-container"><canvas id="steaming-time-chart"></canvas></div>
+                </div>
+                <h3 class="text-2xl font-bold mb-6 text-center text-[#A37E64]">蒸煮黃金法則</h3>
+                <div class="grid md:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h4 class="font-bold text-xl mb-2">🟢 鎖住翠綠</h4>
+                        <p class="text-gray-600">過度烹煮會分解葉綠素。解決方法：<strong class="text-[#86A37E]">精準計時</strong>，並在起鍋後<strong class="text-[#86A37E]">立即冰鎮</strong>（若要涼拌）。</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h4 class="font-bold text-xl mb-2">💧 告別軟爛</h4>
+                        <p class="text-gray-600">鍋蓋凝結的水滴是蔬菜濕軟的元兇。解決方法：在盤子上<strong class="text-[#86A37E]">覆蓋另一個盤子</strong>，或在鍋蓋邊緣<strong class="text-[#86A37E]">斜插一根筷子</strong>。</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h4 class="font-bold text-xl mb-2">❤️ 營養最大化</h4>
+                        <p class="text-gray-600">蒸煮能比水煮保留更多水溶性維生素。選擇蒸，就是選擇<strong class="text-[#86A37E]">更聰明的健康</strong>。</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="flavors" class="app-section hidden">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold mb-2">風味魔法師</h2>
+                    <p class="text-gray-600">從蒸煮到驚艷，只需三步驟，讓您的健康餐盤美味升級。</p>
+                </div>
+                <div id="sauce-grid" class="grid md:grid-cols-2 gap-6"></div>
+            </section>
+
+            <section id="balanced-plate" class="app-section hidden">
+                 <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold mb-2">均衡餐盤學</h2>
+                    <p class="text-gray-600">將蒸蔬菜融入日常，輕鬆組裝出一頓營養又省力的完整餐點。</p>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm mb-12">
+                    <h3 class="text-2xl font-bold mb-4 text-center text-[#A37E64]">彩虹的連結：為健康而食</h3>
+                    <p class="text-center text-gray-500 mb-6">吃各種顏色的蔬菜，攝取多樣的「植化素」。點擊下方色塊，探索它們的秘密！</p>
+                    <div class="flex justify-center flex-wrap gap-4 mb-6">
+                        <div class="color-block cursor-pointer p-6 rounded-full w-20 h-20 flex items-center justify-center font-bold text-white shadow-md bg-red-500" data-color="red">紅色</div>
+                        <div class="color-block cursor-pointer p-6 rounded-full w-20 h-20 flex items-center justify-center font-bold text-white shadow-md bg-orange-400" data-color="orange">橘黃</div>
+                        <div class="color-block cursor-pointer p-6 rounded-full w-20 h-20 flex items-center justify-center font-bold text-white shadow-md bg-green-500" data-color="green">綠色</div>
+                        <div class="color-block cursor-pointer p-6 rounded-full w-20 h-20 flex items-center justify-center font-bold text-white shadow-md bg-purple-500" data-color="purple">藍紫</div>
+                        <div class="color-block cursor-pointer p-6 rounded-full w-20 h-20 flex items-center justify-center font-bold text-gray-700 shadow-md bg-gray-100" data-color="white">白色</div>
+                    </div>
+                    <div id="phyto-info" class="p-6 bg-gray-50 rounded-lg min-h-[120px] text-center flex flex-col justify-center">
+                         <p class="text-gray-500">點擊色塊來查看詳細資訊。</p>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="ai-kitchen" class="app-section hidden">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl font-bold mb-2">✨ AI 創意廚房</h2>
+                    <p class="text-gray-600">靈感枯竭？讓您的 AI 烹飪助理來幫忙！</p>
+                </div>
+
+                <!-- AI Recipe Generator -->
+                <div class="bg-white p-6 sm:p-8 rounded-xl shadow-sm mb-12">
+                    <h3 class="text-2xl font-bold mb-2 text-center text-[#A37E64]">AI 食譜生成器</h3>
+                    <p class="text-center text-gray-500 mb-6">選擇蔬菜和風味，AI 為您量身打造創意蒸料理。</p>
+                    <div class="grid sm:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="ai-veg-select" class="block text-sm font-medium text-gray-700 mb-1">選擇一種蔬菜</label>
+                            <select id="ai-veg-select" class="w-full p-2 border border-gray-300 rounded-lg"></select>
+                        </div>
+                        <div>
+                            <label for="ai-sauce-select" class="block text-sm font-medium text-gray-700 mb-1">選擇一種風味</label>
+                            <select id="ai-sauce-select" class="w-full p-2 border border-gray-300 rounded-lg"></select>
+                        </div>
+                    </div>
+                    <button id="generate-recipe-btn" class="btn-gemini w-full py-3 px-4 rounded-lg font-semibold flex items-center justify-center">
+                        ✨ 生成創意食譜
+                    </button>
+                    <div id="recipe-result" class="mt-6 p-6 bg-gray-50 rounded-lg min-h-[150px]">
+                        <p class="text-gray-500 text-center">AI 的創意結晶將會顯示在這裡...</p>
+                    </div>
+                </div>
+
+                <!-- AI Plate Designer -->
+                <div class="bg-white p-6 sm:p-8 rounded-xl shadow-sm">
+                    <h3 class="text-2xl font-bold mb-2 text-center text-[#A37E64]">AI 智慧餐盤</h3>
+                    <p class="text-center text-gray-500 mb-6">告訴 AI 您今天的主食，它將為您設計一套完整、均衡的蒸煮餐。</p>
+                    <div class="mb-4">
+                        <label for="ai-protein-input" class="block text-sm font-medium text-gray-700 mb-1">我今天的主食是...</label>
+                        <input type="text" id="ai-protein-input" placeholder="例如：雞胸肉、鮭魚、豆腐" class="w-full p-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <button id="generate-plate-btn" class="btn-gemini w-full py-3 px-4 rounded-lg font-semibold flex items-center justify-center">
+                        ✨ 設計我的餐盤
+                    </button>
+                    <div id="plate-result" class="mt-6 p-6 bg-gray-50 rounded-lg min-h-[150px]">
+                        <p class="text-gray-500 text-center">您的客製化營養餐盤建議將會顯示在這裡...</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const vegData = [
+                { name: '玉米筍', emoji: '🌽', category: 'zero', time: '4-5 分鐘', tip: '整支沖水後排進蒸籠，帶殼蒸更甜。' },
+                { name: '四季豆/青龍豆', emoji: '🫛', category: 'zero', time: '3-4 分鐘', tip: '去蒂頭直接蒸，保持翠綠。注意：菜豆類需蒸10分鐘以上才安全。' },
+                { name: '金針菇', emoji: '🍄', category: 'zero', time: '3 分鐘', tip: '切掉底部硬頭，分把鋪盤蒸。' },
+                { name: '冷凍花椰菜/毛豆', emoji: '🥦', category: 'pre-prepped', time: '5 分鐘', tip: '無需解凍，直接入蒸籠。' },
+                { name: '櫛瓜', emoji: '🥒', category: 'minimal', time: '4-5 分鐘', tip: '橫切厚片或對切長條。' },
+                { name: '彩色甜椒', emoji: '🌶️', category: 'minimal', time: '3-4 分鐘', tip: '去籽後切塊，色彩增食慾。' },
+                { name: '栗南瓜', emoji: '🎃', category: 'minimal', time: '8 分鐘', tip: '去籽帶皮切月牙片，甜度高。' },
+                { name: '胡蘿蔔', emoji: '🥕', category: 'minimal', time: '6-7 分鐘', tip: '斜切薄片或條狀。' },
+                { name: '蘆筍', emoji: '🌿', category: 'zero', time: '3-5 分鐘', tip: '用手輕折根部去除老梗。' },
+                { name: '高麗菜/娃娃菜', emoji: '🥬', category: 'minimal', time: '10-15 分鐘', tip: '對切或切大塊，蒸後清甜。' },
+                { name: '茄子', emoji: '🍆', category: 'minimal', time: '8-10 分鐘', tip: '縱向對切，表面輕劃幾刀。' }
+            ];
+
+            const sauceData = [
+                { name: '經典台式蒜蓉醬油', style: '🇹🇼 台式', ingredients: '醬油膏 2份、蒜末 1份、糖/味醂 0.5份、香油 少許', pairing: '幾乎所有蔬菜，特別是葉菜類、茄子。' },
+                { name: '清爽日式和風醬', style: '🇯🇵 日式', ingredients: '日式醬油 2份、米醋 1份、味醂 1份、(可選)柴魚粉', pairing: '高麗菜、菇類、海帶芽。' },
+                { name: '簡易地中海油醋醬', style: '🇮🇹 地中海', ingredients: '初榨橄欖油 3份、檸檬汁 1份、鹽、黑胡椒', pairing: '蘆筍、甜椒、櫛瓜、番茄。' },
+                { name: '惹味粵式淋熱油', style: '🇭🇰 粵式', ingredients: '蒜末、辣椒末、蔥花，淋上滾燙熱油，再加醬油調味', pairing: '茄子、娃娃菜（可搭粉絲）。' },
+            ];
+            
+            const phytoData = {
+                red: { title: '紅色蔬果 (茄紅素)', text: '保護心血管、降低特定癌症風險。適合清蒸的有：小番茄、紅甜椒。' },
+                orange: { title: '橘黃色蔬果 (β-胡蘿蔔素)', text: '維護視覺健康、強化免疫功能。適合清蒸的有：南瓜、黃甜椒、玉米筍、胡蘿蔔。' },
+                green: { title: '綠色蔬果 (葉綠素)', text: '維護視覺健康、強健骨骼。適合清蒸的有：青花菜、蘆筍、櫛瓜、毛豆。' },
+                purple: { title: '藍紫色蔬果 (花青素)', text: '強力抗氧化、抗發炎。適合清蒸的有：茄子、紫甘藍。' },
+                white: { title: '白色蔬果 (大蒜素)', text: '保護心血管、提升免疫力。適合清蒸的有：蘑菇、洋蔥、高麗菜。' },
+            };
+
+            const vegGrid = document.getElementById('veg-grid');
+            const filterContainer = document.getElementById('filter-container');
+            const sauceGrid = document.getElementById('sauce-grid');
+
+            const renderVegGrid = (filter = 'all') => {
+                vegGrid.innerHTML = '';
+                const filteredData = filter === 'all' ? vegData : vegData.filter(v => v.category === filter);
+                filteredData.forEach(veg => {
+                    const card = document.createElement('div');
+                    card.className = 'veg-card bg-white p-6 rounded-xl shadow-sm cursor-pointer';
+                    card.innerHTML = `<div class="flex items-center mb-3"><span class="text-4xl mr-4">${veg.emoji}</span><div><h4 class="font-bold text-xl">${veg.name}</h4><p class="text-sm text-gray-500">蒸煮時間: <span class="font-semibold text-[#A37E64]">${veg.time}</span></p></div></div><p class="text-gray-600">${veg.tip}</p>`;
+                    vegGrid.appendChild(card);
+                });
+            };
+
+            const renderSauceGrid = () => {
+                sauceGrid.innerHTML = '';
+                sauceData.forEach(sauce => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-white p-6 rounded-xl shadow-sm';
+                    card.innerHTML = `<h4 class="font-bold text-xl mb-3"><span class="mr-2">${sauce.style}</span>${sauce.name}</h4><p class="mb-2"><strong class="text-gray-700">核心材料：</strong>${sauce.ingredients}</p><p><strong class="text-gray-700">最佳搭配：</strong>${sauce.pairing}</p>`;
+                    sauceGrid.appendChild(card);
+                });
+            };
+
+            filterContainer.addEventListener('click', (e) => {
+                if (e.target.tagName === 'BUTTON') {
+                    document.querySelector('.btn-filter.active').classList.remove('active');
+                    e.target.classList.add('active');
+                    renderVegGrid(e.target.dataset.filter);
+                }
+            });
+
+            const mainNav = document.getElementById('main-nav');
+            const sections = document.querySelectorAll('.app-section');
+            let chart = null;
+
+            mainNav.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = e.target.dataset.target;
+                if (!targetId || e.target.classList.contains('active')) return;
+
+                document.querySelector('.nav-link.active').classList.remove('active');
+                e.target.classList.add('active');
+
+                sections.forEach(section => {
+                    section.id === targetId ? section.classList.remove('hidden') : section.classList.add('hidden');
+                });
+                
+                if (targetId === 'techniques' && !chart) renderSteamingTimeChart();
+                if (targetId === 'ai-kitchen') populateAiSelectors();
+            });
+
+            const renderSteamingTimeChart = () => {
+                const ctx = document.getElementById('steaming-time-chart').getContext('2d');
+                const chartData = {
+                    labels: ['金針菇', '四季豆', '甜椒', '玉米筍', '櫛瓜', '冷凍蔬菜', '胡蘿蔔', '南瓜', '茄子', '高麗菜'],
+                    datasets: [{ label: '最短蒸煮時間 (分)', data: [2, 3, 3, 4, 4, 5, 6, 8, 8, 10], backgroundColor: 'rgba(134, 163, 126, 0.7)' }, { label: '最長蒸煮時間 (分)', data: [3, 4, 4, 5, 5, 5, 7, 8, 10, 15], backgroundColor: 'rgba(163, 126, 100, 0.5)' }]
+                };
+                chart = new Chart(ctx, { type: 'bar', data: chartData, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false } });
+            };
+
+            const colorContainer = document.querySelector('.flex.justify-center.flex-wrap.gap-4');
+            const phytoInfo = document.getElementById('phyto-info');
+            colorContainer.addEventListener('click', e => {
+                if(e.target.dataset.color) {
+                    const data = phytoData[e.target.dataset.color];
+                    phytoInfo.innerHTML = `<h4 class="font-bold text-lg mb-1">${data.title}</h4><p class="text-gray-700">${data.text}</p>`;
+                }
+            });
+
+            // Gemini API Section
+            const vegSelect = document.getElementById('ai-veg-select');
+            const sauceSelect = document.getElementById('ai-sauce-select');
+            const generateRecipeBtn = document.getElementById('generate-recipe-btn');
+            const recipeResult = document.getElementById('recipe-result');
+            
+            const proteinInput = document.getElementById('ai-protein-input');
+            const generatePlateBtn = document.getElementById('generate-plate-btn');
+            const plateResult = document.getElementById('plate-result');
+
+            function populateAiSelectors() {
+                if (vegSelect.options.length > 1) return; // Already populated
+                vegData.forEach(v => vegSelect.add(new Option(v.name, v.name)));
+                sauceData.forEach(s => sauceSelect.add(new Option(s.name, s.name)));
+            }
+
+            async function callGemini(prompt, resultElement) {
+                resultElement.innerHTML = '<div class="loader"></div>';
+                let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                       throw new Error(`API 請求失敗，狀態碼： ${response.status}`);
+                    }
+
+                    const result = await response.json();
+
+                    if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0]) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        resultElement.innerHTML = text.replace(/\n/g, '<br>');
+                    } else {
+                        throw new Error('從 API 收到的回應格式無效。');
+                    }
+                } catch (error) {
+                    console.error('Gemini API 錯誤:', error);
+                    resultElement.innerHTML = `<p class="text-red-500 text-center">抱歉，發生錯誤了。請稍後再試一次。<br><small>${error.message}</small></p>`;
+                }
+            }
+
+            generateRecipeBtn.addEventListener('click', () => {
+                const selectedVeg = vegSelect.value;
+                const selectedSauce = sauceSelect.value;
+                const prompt = `您是一位創意廚師。請根據以下食材，設計一道簡單、美味、健康的清蒸料理。請為這道菜取一個吸引人的名字，並以條列式提供清晰的「食材」和「步驟」說明。\n\n- 主要蔬菜：${selectedVeg}\n- 風味基底：${selectedSauce}`;
+                callGemini(prompt, recipeResult);
+            });
+
+            generatePlateBtn.addEventListener('click', () => {
+                const protein = proteinInput.value;
+                if (!protein.trim()) {
+                    plateResult.innerHTML = '<p class="text-red-500 text-center">請先輸入您的主食！</p>';
+                    return;
+                }
+                const prompt = `您是一位專業的營養師。請以「${protein}」作為主食，設計一份營養均衡、適合一起蒸煮的「一鍋到底」餐盤。請推薦 2-3 種適合搭配的蔬菜，並提供清晰的「食材準備」和「蒸煮步驟」說明，讓使用者可以輕鬆完成。`;
+                callGemini(prompt, plateResult);
+            });
+
+
+            // Initial render
+            renderVegGrid();
+            renderSauceGrid();
+        });
+    </script>
+</body>
+</html>
